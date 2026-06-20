@@ -4,8 +4,8 @@ from aqt.reviewer import Reviewer
 from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
-# todo: re new counts
-#       fix now/ftr double counts
+# todo: merge reviews with new
+#       [bug] ftr double counts
 #   config colors
 #
 # filtered decks (unpack [left])
@@ -45,8 +45,8 @@ def progress_bar_src():
         #prog-lrn-now { background-color: var(--prog-learn); }
         #prog-rev { background-color: var(--prog-review); }
         #prog-new { background-color: var(--prog-new); }
-        #prog-rel-ftr { background-color: var(--prog-relearn); opacity: 0.5; }
-        #prog-lrn-ftr { background-color: var(--prog-learn); opacity: 0.5; }
+        #prog-rel-ftr { background-color: var(--prog-relearn); opacity: 0.25; }
+        #prog-lrn-ftr { background-color: var(--prog-learn); opacity: 0.25; }
     """
     
     html = """
@@ -90,6 +90,30 @@ def total_intraday_steps(did, card_state: int):
 
     return len([step for step in steps if step < 1440.0]) # count steps < 1d
 
+def deck_new_count(did):
+    deck = mw.col.sched.deck_due_tree(did)
+    if not deck:
+        return (0, 0)
+    new_ni = max(0, deck.new_count)        
+    new_li = 0
+    
+    if new_ni > 0:
+        subdids_str = ",".join(map(str, mw.col.decks.deck_and_child_ids(did)))
+        
+        decks_new_counts = mw.col.db.all(
+            f"SELECT did, count() FROM cards WHERE queue = 0 AND did IN ({subdids_str}) GROUP BY did"
+        )
+        
+        total_new_count = sum(new_count for _, new_count in decks_new_counts)
+        
+        if total_new_count > 0:
+            for sub_did, new_count in decks_new_counts:
+                new_limited = new_count * new_ni / total_new_count # only an estimate -- the exact decks (=> learning steps) for new card being pulled are not predetermined
+                new_li += new_limited * total_intraday_steps(sub_did, 1)  
+
+    # (NEW cards, future LEARN cards)
+    return  (new_ni, new_li) 
+
 def upd_progress(*args, **kwargs):
     if not mw.col or not mw.col.sched: return
     
@@ -120,14 +144,14 @@ def upd_progress(*args, **kwargs):
             # intraday card
             is_ready_now = (due_val <= live_now_secs)
             current_step_idx = left_val // 1000 # left_val % 1000 = total_steps_today (does not count beyond day cutoff)
-            remaining_intraday_steps = total_intraday_steps(card_did, type_val) - current_step_idx - is_ready_now
+            future_intraday_steps = total_intraday_steps(card_did, type_val) - current_step_idx - is_ready_now
 
             if (type_val == 3): # relearning
                 rel_n += is_ready_now
-                rel_l += remaining_intraday_steps
+                rel_l += future_intraday_steps
             else:
                 lrn_n += is_ready_now
-                lrn_l += remaining_intraday_steps
+                lrn_l += future_intraday_steps
 
 
     # fallback to the actual scheduler counts (changes nothing if SQL matches rust scheduler calculations)
@@ -149,12 +173,19 @@ def upd_progress(*args, **kwargs):
         else:
             lrn_n = sched_learn_total
 
-    # NEW cards
-    sched_new = max(0, tree.new_count)
 
-    target_did = dids if (dids and not is_db) else 1
-    steps_per_new_card = total_intraday_steps(target_did if isinstance(target_did, int) else target_did, 1)
-    new_steps = sched_new * steps_per_new_card
+    # NEW cards
+    new_n = 0
+    new_l = 0
+
+    root_dids = [d.id for d in mw.col.decks.all_names_and_ids() if "::" not in d.name] if is_db else [current_did]
+    for root_did in root_dids:
+        new_ni, new_li = deck_new_count(root_did)
+        new_n += new_ni
+        new_l += new_li
+
+    lrn_l += round(new_l)
+
 
     # REVIEW cards
     rev_n = max(0, tree.review_count)
@@ -163,12 +194,13 @@ def upd_progress(*args, **kwargs):
             rev_n = max(0, mw.col.sched.get_queued_cards().review_count) # returns count for the current deck
         except: 
             pass
+
     
     # DONE cards
     done = mw.col.db.scalar(f"SELECT count() FROM revlog WHERE id >= ? AND id < ? AND cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))", int((cutoff - 86400) * 1000), int(cutoff * 1000)) or 0 if dids else 0
 
     # final count
-    card_counts = [int(done), int(rel_n), int(lrn_n), int(rev_n), int(new_steps), int(rel_l), int(lrn_l)]
+    card_counts = [int(done), int(rel_n), int(lrn_n), int(rev_n), int(new_n), int(rel_l), int(lrn_l)]
 
 
 

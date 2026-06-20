@@ -5,7 +5,7 @@ from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
 # todo: merge reviews with new
-#       [bug] ftr double counts
+#   grid?
 #   config colors
 #
 # filtered decks (unpack [left])
@@ -45,8 +45,8 @@ def progress_bar_src():
         #prog-lrn-now { background-color: var(--prog-learn); }
         #prog-rev { background-color: var(--prog-review); }
         #prog-new { background-color: var(--prog-new); }
-        #prog-rel-ftr { background-color: var(--prog-relearn); opacity: 0.25; }
-        #prog-lrn-ftr { background-color: var(--prog-learn); opacity: 0.25; }
+        #prog-rel-ftr { background-color: var(--prog-relearn); opacity: 0.2; }
+        #prog-lrn-ftr { background-color: var(--prog-learn); opacity: 0.2; }
     """
     
     html = """
@@ -76,19 +76,18 @@ def reviewer_inject(web_content, context):
     web_content.head += f"<style>{css}</style>"
     web_content.body = html + web_content.body
 
-
-def total_intraday_steps(did, card_state: int):
-    steps = [10.0] if card_state == 3 else [1.0, 10.0] # default anki steps
+def steps_setting(did, card_state: int):
     try:
         config = mw.col.decks.config_dict_for_deck_id(did)
         if card_state == 3: # relearn
-            steps = config.get("lapse", {}).get("delays", [10.0])
+            return config.get("lapse", {}).get("delays", [10])
         else: # learn
-            steps = config.get("new", {}).get("delays", [1.0, 10.0])
+            return config.get("new", {}).get("delays", [1, 10])
     except:
-        pass
+        return [10] if card_state == 3 else [1, 10] # anki defaults (10m / 1m 10m)
 
-    return len([step for step in steps if step < 1440.0]) # count steps < 1d
+def short_term_count(steps):
+    return len([step for step in steps if step < 1440]) # count steps < 1d
 
 def deck_new_count(did):
     deck = mw.col.sched.deck_due_tree(did)
@@ -109,7 +108,7 @@ def deck_new_count(did):
         if total_new_count > 0:
             for sub_did, new_count in decks_new_counts:
                 new_limited = new_count * new_ni / total_new_count # only an estimate -- the exact decks (=> learning steps) for new card being pulled are not predetermined
-                new_li += new_limited * total_intraday_steps(sub_did, 1)  
+                new_li += new_limited * short_term_count(steps_setting(sub_did, 1))
 
     # (NEW cards, future LEARN cards)
     return  (new_ni, new_li) 
@@ -123,35 +122,39 @@ def upd_progress(*args, **kwargs):
     dids = [d["id"] for d in mw.col.decks.all()] if is_db else mw.col.decks.deck_and_child_ids(current_did)
     
     cutoff = mw.col.sched.day_cutoff
-    live_now_secs = int(time.time())
-    today_calendar_day = mw.col.sched.today
+    current_time = int(time.time())
+    current_day = mw.col.sched.today
     
     # (RE)LEARN cards | queue = 1 - intraday, 3 - interday | type = 1 - learning, 3 - relearning
     db_data = mw.col.db.all(f"SELECT did, due, left, type FROM cards WHERE queue IN (1, 3) AND did IN ({','.join(map(str, dids))})") if dids else []
     
     rel_n, rel_l, lrn_n, lrn_l = 0, 0, 0, 0
     
-    for card_did, due_val, left_val, type_val in db_data:
+    for card_did, due_val, left_val, card_state in db_data:
+
+        steps = steps_setting(card_did, card_state)
+
+        # intraday cards (queue=1) have dues stored as timestamps (=> >10^9(s) = 20010909(iso)), the interday rest (queue=3, not necessarily ivl > 1d as it depends on day cutoff timestamp) have due = day count from epoch=0 (=> << 10^9)
+        is_ready_now = (due_val <= current_time) if (due_val > 1000000000) else (due_val <= current_day)
         
-        if (due_val < 1000000000): # ivl < 1d cards (queue=1) have due storead as timestamps (=> >10^9(s) = 20010909(iso)), the rest (queue=3) have due = day count from epoch=0 (=> << 10^9)
-            # interday card
-            if (due_val <= today_calendar_day): # is_ready_now
-                if (type_val == 3): # relearning
+        if (steps[-left_val] < 1440):
+            # short-term card
+            
+            today_steps = short_term_count(steps[-left_val:]) - is_ready_now
+
+            if (card_state == 3): # relearning
+                rel_n += is_ready_now
+                rel_l += today_steps
+            else:
+                lrn_n += is_ready_now
+                lrn_l += today_steps
+        else:
+            # long-term card
+            if is_ready_now:
+                if (card_state == 3): # relearning
                     rel_n += 1
                 else:
                     lrn_n += 1
-        else:
-            # intraday card
-            is_ready_now = (due_val <= live_now_secs)
-            current_step_idx = left_val // 1000 # left_val % 1000 = total_steps_today (does not count beyond day cutoff)
-            future_intraday_steps = total_intraday_steps(card_did, type_val) - current_step_idx - is_ready_now
-
-            if (type_val == 3): # relearning
-                rel_n += is_ready_now
-                rel_l += future_intraday_steps
-            else:
-                lrn_n += is_ready_now
-                lrn_l += future_intraday_steps
 
 
     # fallback to the actual scheduler counts (changes nothing if SQL matches rust scheduler calculations)
@@ -224,7 +227,17 @@ def upd_progress(*args, **kwargs):
         f"Learn: {card_counts[2]}(+{card_counts[6]})\\n"
         f"New: {card_counts[4]}"
     )
-    active_webview.eval(f"console.log('{log_msg.replace("'", "\\'")}');")
+    active_webview.eval((
+            # f"current = {card_counts};"
+            # f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
+            # f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
+            # f"if (past[0] !== current[0]) {{console.log(`${{current[0]>past[0]?'+':''}}${{current[0]-past[0]}}`,'done');}}"
+            # f"if (past[3] !== current[3]) {{console.log(`${{current[3]>past[3]?'+':''}}${{current[3]-past[3]}}`,'review');}}"
+            # f"if (past[1] !== current[1] || past[5] !== current[5]) {{console.log(`${{current[1]>past[1]?'+':''}}${{current[1]-past[1]}}`,`(${{current[5]>past[5]?'+':''}}${{current[5]-past[5]}})`,'relearn');}}"
+            # f"if (past[2] !== current[2] || past[6] !== current[6]) {{console.log(`${{current[2]>past[2]?'+':''}}${{current[2]-past[2]}}`,`(${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}})`,'learn');}}"
+            # f"if (past[4] !== current[4]) {{console.log(`${{current[4]>past[4]?'+':''}}${{current[4]-past[4]}}`,'new');}}"
+            f"console.log('{log_msg}');"
+        ))
 
     grow_values = card_counts if sum(card_counts) > 0 else [1, 0, 0, 0, 0, 0, 0]
 

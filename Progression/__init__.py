@@ -1,73 +1,45 @@
+# This script is part of the Anki Progression add-on.
+# Source: github.com/Eltaurus-Lt/Lt-Anki-Addons
+# 
+# Copyright © 2026 Eltaurus
+# Contact: 
+#     Email: Eltaurus@inbox.lt
+#     GitHub: github.com/Eltaurus-Lt
+#     Anki Forums: forums.ankiweb.net/u/Eltaurus
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 import time
 from aqt import mw, gui_hooks
 from aqt.reviewer import Reviewer
 from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
-from aqt.utils import tooltip
+from . import Webview_injector
 
 # todo: 
 #   -next
-#   merge reviews with new
+#   iterate over decks for home screen
 #   customizable order
-#   config colors
 #   css classes
 #
 # filtered decks
 # manually scheduled cards
 # non-monotonic learning steps?
 
-def progress_bar_src():
-    css = """
-        :root {
-            --prog-bg: #e0e0e0;
-            --prog-done: yellowgreen;
-            --prog-review: royalblue;
-            --prog-relearn: red;
-            --prog-learn: gold;
-            --prog-new: forestgreen;
-
-            --rate-again: #a50026;
-            --rate-hard: #fdbe70;
-            --rate-good: #b6e076;
-        }
-        #lt-progress-bar {
-            display: flex;
-            width: 100vw;
-            height: 5px;
-            position: fixed;
-            top: 0;
-            left: 0;
-            box-sizing: border-box;
-            background-color: var(--prog-bg);
-            z-index: 1000;
-        }
-        .lt-progress-segment {
-            height: 100%;
-            flex-basis: 0;
-        }
-        .lt-progress-segment.animated {
-            transition: flex-grow 0.2s ease-in-out;
-        }
-
-        #prog-done { background-color: var(--prog-done); }
-
-        #prog-new-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-new)); }
-        #prog-new-todo { background-color: var(--prog-new); }
-        #prog-lrn-done { background-color: var(--rate-good); }
-        #prog-lrn-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-learn)); }
-        #prog-lrn-todo { background-color: var(--prog-learn); }
-        #prog-lrn-ftr  { background-color: var(--prog-learn); opacity: 0.2; }
-        #prog-rev-done { background-color: color-mix( in lab, var(--prog-done) 70%, var(--prog-review)); }
-        #prog-rev-todo { background-color: var(--prog-review); }
-        #prog-rel-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-relearn)); }
-        #prog-rel-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-relearn)); }
-        #prog-rel-todo { background-color: var(--prog-relearn); }
-        #prog-rel-ftr  { background-color: var(--prog-relearn); opacity: 0.2; }
-        
-    """
-    
-    html = """
+def progress_bar_template():
+    return """
         <div id="lt-progress-bar">
             <div id="prog-new-done" class="lt-progress-segment"></div>
             <div id="prog-new-todo" class="lt-progress-segment"></div>
@@ -86,21 +58,6 @@ def progress_bar_src():
             <div id="prog-rel-ftr"  class="lt-progress-segment"></div>
         </div>
     """
-    return html, css
-
-def deck_main_inject(deck_view, content):
-    html, css = progress_bar_src()
-    content.tree += f"<style>{css}</style>{html}"
-
-def deck_view_inject(deck_view, content):
-    html, css = progress_bar_src()
-    content.table += f"<style>{css}</style>{html}"
-
-def reviewer_inject(web_content, context):
-    if not isinstance(context, Reviewer): return
-    html, css = progress_bar_src()
-    web_content.head += f"<style>{css}</style>"
-    web_content.body = html + web_content.body
 
 def steps_setting(did, card_state: int):
     try:
@@ -257,6 +214,7 @@ def upd_progress(*args, **kwargs):
         int(cutoff * 1000)
     ) if dids else None
     done = [count or 0 for count in done] if done else [0] * 6
+    
 
     # final count
     card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(rev_n), int(rel_n), int(lrn_l), int(rel_l)])] 
@@ -277,7 +235,7 @@ def upd_progress(*args, **kwargs):
 
     # logging to JS console:
     log_msg = (
-        f"Done: {sum(card_counts[:6])} {card_counts[:6]}\\n"
+        f"Done: {done_total}={sum(card_counts[:6])} {card_counts[:6]}\\n"
         f"New: {card_counts[6]}\\n"
         f"Learn: {card_counts[7]}(+{card_counts[10]})\\n"
         f"Review: {card_counts[8]}\\n"
@@ -298,7 +256,7 @@ def upd_progress(*args, **kwargs):
             # f"if (past[7] !== current[7] || past[10] !== current[10]) {{console.log(`${{current[7]>past[7]?'+':''}}${{current[7]-past[7]}}`,`(${{current[10]>past[10]?'+':''}}${{current[10]-past[10]}})`,'learn');}}"
             # f"if (past[8] !== current[8]) {{console.log(`${{current[8]>past[8]?'+':''}}${{current[8]-past[8]}}`,'review');}}"
             # f"if (past[9] !== current[9] || past[11] !== current[11]) {{console.log(`${{current[9]>past[9]?'+':''}}${{current[9]-past[9]}}`,`(${{current[11]>past[11]?'+':''}}${{current[11]-past[11]}})`,'relearn');}}"
-            
+
             # result
             f"console.log('{log_msg}');"
         ))
@@ -313,6 +271,17 @@ def upd_progress(*args, **kwargs):
     """
     active_webview.eval(assign_stats_js)
 
+
+
+def deck_main_inject(deck_view, content):
+    content.tree += progress_bar_template()
+
+def deck_view_inject(deck_view, content):
+    content.table += progress_bar_template()
+
+def reviewer_inject(web_content, context):
+    if not isinstance(context, Reviewer): return
+    web_content.body = progress_bar_template() + web_content.body
 
 gui_hooks.deck_browser_will_render_content.append(deck_main_inject)
 gui_hooks.overview_will_render_content.append(deck_view_inject)

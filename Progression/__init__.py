@@ -4,11 +4,16 @@ from aqt.reviewer import Reviewer
 from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
-# todo: merge reviews with new
-#   grid?
+from aqt.utils import tooltip
+
+# todo: 
+#   -next
+#   merge reviews with new
+#   customizable order
 #   config colors
+#   css classes
 #
-# filtered decks (unpack [left])
+# filtered decks
 # manually scheduled cards
 # non-monotonic learning steps?
 
@@ -21,6 +26,10 @@ def progress_bar_src():
             --prog-relearn: red;
             --prog-learn: gold;
             --prog-new: forestgreen;
+
+            --rate-again: #a50026;
+            --rate-hard: #fdbe70;
+            --rate-good: #b6e076;
         }
         #lt-progress-bar {
             display: flex;
@@ -40,24 +49,41 @@ def progress_bar_src():
         .lt-progress-segment.animated {
             transition: flex-grow 0.2s ease-in-out;
         }
+
         #prog-done { background-color: var(--prog-done); }
-        #prog-rel-now { background-color: var(--prog-relearn); }
-        #prog-lrn-now { background-color: var(--prog-learn); }
-        #prog-rev { background-color: var(--prog-review); }
-        #prog-new { background-color: var(--prog-new); }
-        #prog-rel-ftr { background-color: var(--prog-relearn); opacity: 0.2; }
-        #prog-lrn-ftr { background-color: var(--prog-learn); opacity: 0.2; }
+
+        #prog-new-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-new)); }
+        #prog-new-todo { background-color: var(--prog-new); }
+        #prog-lrn-done { background-color: var(--rate-good); }
+        #prog-lrn-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-learn)); }
+        #prog-lrn-todo { background-color: var(--prog-learn); }
+        #prog-lrn-ftr  { background-color: var(--prog-learn); opacity: 0.2; }
+        #prog-rev-done { background-color: color-mix( in lab, var(--prog-done) 70%, var(--prog-review)); }
+        #prog-rev-todo { background-color: var(--prog-review); }
+        #prog-rel-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-relearn)); }
+        #prog-rel-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-relearn)); }
+        #prog-rel-todo { background-color: var(--prog-relearn); }
+        #prog-rel-ftr  { background-color: var(--prog-relearn); opacity: 0.2; }
+        
     """
     
     html = """
         <div id="lt-progress-bar">
-            <div id="prog-done" class="lt-progress-segment"></div>
-            <div id="prog-rev" class="lt-progress-segment"></div>
-            <div id="prog-rel-now" class="lt-progress-segment"></div>
-            <div id="prog-lrn-now" class="lt-progress-segment"></div>
-            <div id="prog-new" class="lt-progress-segment"></div>
-            <div id="prog-rel-ftr" class="lt-progress-segment"></div>
-            <div id="prog-lrn-ftr" class="lt-progress-segment"></div>
+            <div id="prog-new-done" class="lt-progress-segment"></div>
+            <div id="prog-new-todo" class="lt-progress-segment"></div>
+
+            <div id="prog-lrn-done" class="lt-progress-segment"></div>
+            <div id="prog-lrn-hold" class="lt-progress-segment"></div>
+            <div id="prog-lrn-todo" class="lt-progress-segment"></div>
+            <div id="prog-lrn-ftr"  class="lt-progress-segment"></div>
+
+            <div id="prog-rev-done" class="lt-progress-segment"></div>
+            <div id="prog-rev-todo" class="lt-progress-segment"></div>
+
+            <div id="prog-rel-done" class="lt-progress-segment"></div>
+            <div id="prog-rel-hold" class="lt-progress-segment"></div>
+            <div id="prog-rel-todo" class="lt-progress-segment"></div>
+            <div id="prog-rel-ftr"  class="lt-progress-segment"></div>
         </div>
     """
     return html, css
@@ -124,6 +150,14 @@ def upd_progress(*args, **kwargs):
     cutoff = mw.col.sched.day_cutoff
     current_time = int(time.time())
     current_day = mw.col.sched.today
+
+    # REVIEW cards
+    rev_n = max(0, tree.review_count)
+    if not is_db:
+        try: 
+            rev_n = max(0, mw.col.sched.get_queued_cards().review_count) # returns count for the current deck
+        except: 
+            pass
     
     # (RE)LEARN cards | queue = 1 - intraday, 3 - interday | type = 1 - learning, 3 - relearning
     db_data = mw.col.db.all(f"SELECT did, due, left, type FROM cards WHERE queue IN (1, 3) AND did IN ({','.join(map(str, dids))})") if dids else []
@@ -189,21 +223,43 @@ def upd_progress(*args, **kwargs):
 
     lrn_l += round(new_l)
 
-
-    # REVIEW cards
-    rev_n = max(0, tree.review_count)
-    if not is_db:
-        try: 
-            rev_n = max(0, mw.col.sched.get_queued_cards().review_count) # returns count for the current deck
-        except: 
-            pass
-
     
     # DONE cards
-    done = mw.col.db.scalar(f"SELECT count() FROM revlog WHERE id >= ? AND id < ? AND cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))", int((cutoff - 86400) * 1000), int(cutoff * 1000)) or 0 if dids else 0
+    done_total = mw.col.db.scalar(f"SELECT count() FROM revlog WHERE id >= ? AND id < ? AND cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))", int((cutoff - 86400) * 1000), int(cutoff * 1000)) or 0 if dids else 0
+    done = mw.col.db.first(
+        f"""
+        SELECT 
+            -- 1. New (Total) = learning and has no prior reviews
+            SUM(CASE WHEN r.type = 0 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+            
+            -- 2. Learning (Good/Easy), have prior review
+            SUM(CASE WHEN r.type = 0 AND r.ease IN (3, 4) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+            
+            -- 3. Learning (Again/Hard), have prior review
+            SUM(CASE WHEN r.type = 0 AND r.ease IN (1, 2) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+            
+            -- 4. Review (Total)
+            SUM(CASE WHEN r.type = 1 THEN 1 ELSE 0 END),
+            
+            -- 5. Relearning (Good/Easy)
+            SUM(CASE WHEN r.type = 2 AND r.ease IN (3, 4) THEN 1 ELSE 0 END),
+            
+            -- 6. Relearning (Again/Hard)
+            SUM(CASE WHEN r.type = 2 AND r.ease IN (1, 2) THEN 1 ELSE 0 END)
+
+            -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
+            
+        FROM revlog r
+        WHERE r.id >= ? AND r.id < ? 
+        AND r.cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
+        """, 
+        int((cutoff - 86400) * 1000), 
+        int(cutoff * 1000)
+    ) if dids else None
+    done = [count or 0 for count in done] if done else [0] * 6
 
     # final count
-    card_counts = [int(done), int(rel_n), int(lrn_n), int(rev_n), int(new_n), int(rel_l), int(lrn_l)]
+    card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(rev_n), int(rel_n), int(lrn_l), int(rel_l)])] 
 
 
 
@@ -221,34 +277,41 @@ def upd_progress(*args, **kwargs):
 
     # logging to JS console:
     log_msg = (
-        f"Done: {card_counts[0]}\\n"
-        f"Review: {card_counts[3]}\\n"
-        f"Relearn: {card_counts[1]}(+{card_counts[5]})\\n"
-        f"Learn: {card_counts[2]}(+{card_counts[6]})\\n"
-        f"New: {card_counts[4]}"
+        f"Done: {sum(card_counts[:6])} {card_counts[:6]}\\n"
+        f"New: {card_counts[6]}\\n"
+        f"Learn: {card_counts[7]}(+{card_counts[10]})\\n"
+        f"Review: {card_counts[8]}\\n"
+        f"Relearn: {card_counts[9]}(+{card_counts[11]})\\n"
     )
     active_webview.eval((
+            # # diff
             # f"current = {card_counts};"
             # f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
             # f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
-            # f"if (past[0] !== current[0]) {{console.log(`${{current[0]>past[0]?'+':''}}${{current[0]-past[0]}}`,'done');}}"
-            # f"if (past[3] !== current[3]) {{console.log(`${{current[3]>past[3]?'+':''}}${{current[3]-past[3]}}`,'review');}}"
-            # f"if (past[1] !== current[1] || past[5] !== current[5]) {{console.log(`${{current[1]>past[1]?'+':''}}${{current[1]-past[1]}}`,`(${{current[5]>past[5]?'+':''}}${{current[5]-past[5]}})`,'relearn');}}"
-            # f"if (past[2] !== current[2] || past[6] !== current[6]) {{console.log(`${{current[2]>past[2]?'+':''}}${{current[2]-past[2]}}`,`(${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}})`,'learn');}}"
-            # f"if (past[4] !== current[4]) {{console.log(`${{current[4]>past[4]?'+':''}}${{current[4]-past[4]}}`,'new');}}"
+            # f"if (past[0] !== current[0]) {{console.log(`+${{current[0]-past[0]}}`,'done (new)');}}"
+            # f"if (past[1] !== current[1]) {{console.log(`+${{current[1]-past[1]}}`,'done (learn)');}}"
+            # f"if (past[2] !== current[2]) {{console.log(`+${{current[2]-past[2]}}`,'done (learn | hold)');}}"
+            # f"if (past[3] !== current[3]) {{console.log(`+${{current[3]-past[3]}}`,'done (review)');}}"
+            # f"if (past[4] !== current[4]) {{console.log(`+${{current[4]-past[4]}}`,'done (relearn)');}}"
+            # f"if (past[5] !== current[5]) {{console.log(`+${{current[5]-past[5]}}`,'done (relearn | hold)');}}"
+            # f"if (past[6] !== current[6]) {{console.log(`${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}}`,'new');}}"
+            # f"if (past[7] !== current[7] || past[10] !== current[10]) {{console.log(`${{current[7]>past[7]?'+':''}}${{current[7]-past[7]}}`,`(${{current[10]>past[10]?'+':''}}${{current[10]-past[10]}})`,'learn');}}"
+            # f"if (past[8] !== current[8]) {{console.log(`${{current[8]>past[8]?'+':''}}${{current[8]-past[8]}}`,'review');}}"
+            # f"if (past[9] !== current[9] || past[11] !== current[11]) {{console.log(`${{current[9]>past[9]?'+':''}}${{current[9]-past[9]}}`,`(${{current[11]>past[11]?'+':''}}${{current[11]-past[11]}})`,'relearn');}}"
+            
+            # result
             f"console.log('{log_msg}');"
         ))
 
-    grow_values = card_counts if sum(card_counts) > 0 else [1, 0, 0, 0, 0, 0, 0]
+    grow_values = card_counts if sum(card_counts) > 0 else [1]*len(card_counts)
+    ids = ["prog-new-done", "prog-lrn-done", "prog-lrn-hold", "prog-rev-done", "prog-rel-done", "prog-rel-hold", "prog-new-todo", "prog-lrn-todo", "prog-rev-todo", "prog-rel-todo", "prog-lrn-ftr", "prog-rel-ftr"]
 
-    ids = ['prog-done', 'prog-rel-now', 'prog-lrn-now', 'prog-rev', 'prog-new', 'prog-rel-ftr', 'prog-lrn-ftr']
-    
-    js_pipeline = f"""
+    assign_stats_js = f"""
     (() => {{
         { '; '.join([f"var segmL = document.getElementById('{Lid}'); if(segmL) {{ segmL.style.flexGrow = {grow}; segmL.classList.add('animated'); }}" for Lid, grow in zip(ids, grow_values)]) }
     }})();
     """
-    active_webview.eval(js_pipeline)
+    active_webview.eval(assign_stats_js)
 
 
 gui_hooks.deck_browser_will_render_content.append(deck_main_inject)

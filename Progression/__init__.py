@@ -30,9 +30,9 @@ from . import Webview_injector
 from aqt.utils import tooltip
 
 # todo: 
-#   -next
-#   iterate over decks for home screen
-#   anki colors
+#   all done ratings
+#   future queued
+#   iterate over decks for home screen -> enhance main window
 #
 # learning siblings
 # filtered decks
@@ -297,9 +297,10 @@ def upd_progress(*args, **kwargs):
                         if(segmL) {{ 
                             segmL.style.setProperty('--count', {count});
                             if ({count} > 0) {{
-                                // min-width -> 1px to avoid flex collapse
+                                segmL.style.minWidth = '1px';
                                 segmL.classList.remove('empty');
                             }} else {{
+                                segmL.style.minWidth = '';
                                 segmL.classList.add('empty');
                             }}
                             setTimeout(()=>segmL.classList.add('animated'),100);

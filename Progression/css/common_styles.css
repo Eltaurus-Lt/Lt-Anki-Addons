@@ -1,5 +1,6 @@
 :root {
     --prog-bg: #e0e0e0;
+
     --prog-done: yellowgreen;
     --prog-review: royalblue;
     --prog-relearn: red;
@@ -10,36 +11,69 @@
     --rate-hard: #fdbe70;
     --rate-good: #b6e076;
 }
+
 #lt-progress-bar {
     display: flex;
-    width: 100vw;
-    height: 5px;
+    flex-wrap: wrap;
+    height: fit-content;
+    box-sizing: border-box;
+    z-index: 1000;
+    gap: 0.02px; /* sic! */
+    padding: 0;
+
     position: fixed;
     top: 0;
     left: 0;
-    box-sizing: border-box;
+    width: 100vw;
+
     background-color: var(--prog-bg);
-    z-index: 1000;
 }
+
+#lt-progress-bar span {
+    flex-basis: 100%;
+    display: block;
+    height: 0;
+}
+
 .lt-progress-segment {
-    height: 100%;
     flex-basis: 0;
+    height: 5px;
+    flex-grow: var(--count);
 }
+
+.lt-progress-segment.empty {
+    height: 0;
+}
+
+.done {
+    background: var(--prog-done) !important;
+}
+
+.new {
+    background: var(--prog-new);
+}
+
+.learn {
+    background: var(--prog-learn);
+}
+
+.review {
+    background: var(--prog-review);
+}
+
+.re {
+    background: var(--prog-relearn);
+}
+
+.hold {
+    opacity: 0.7;
+}
+
+.future {
+    opacity: 0.2;
+}
+
+
 .lt-progress-segment.animated {
-    transition: flex-grow 0.2s ease-in-out;
+    transition: flex-grow 0.2s ease-in-out, height 0.2s ease-in-out;
 }
-
-#prog-done { background-color: var(--prog-done); }
-
-#prog-new-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-new)); }
-#prog-new-todo { background-color: var(--prog-new); }
-#prog-lrn-done { background-color: var(--rate-good); }
-#prog-lrn-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-learn)); }
-#prog-lrn-todo { background-color: var(--prog-learn); }
-#prog-lrn-ftr  { background-color: var(--prog-learn); opacity: 0.2; }
-#prog-rev-done { background-color: color-mix( in lab, var(--prog-done) 70%, var(--prog-review)); }
-#prog-rev-todo { background-color: var(--prog-review); }
-#prog-rel-done { background-color: color-mix( in lab, var(--rate-good) 70%, var(--prog-relearn)); }
-#prog-rel-hold { background-color: color-mix( in lab, var(--rate-again) 70%, var(--prog-relearn)); }
-#prog-rel-todo { background-color: var(--prog-relearn); }
-#prog-rel-ftr  { background-color: var(--prog-relearn); opacity: 0.2; }

@@ -27,13 +27,14 @@ from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
 from . import Webview_injector
+from aqt.utils import tooltip
 
 # todo: 
 #   -next
 #   iterate over decks for home screen
-#   customizable order
-#   css classes
+#   anki colors
 #
+# learning siblings
 # filtered decks
 # manually scheduled cards
 # non-monotonic learning steps?
@@ -41,21 +42,21 @@ from . import Webview_injector
 def progress_bar_template():
     return """
         <div id="lt-progress-bar">
-            <div id="prog-new-done" class="lt-progress-segment"></div>
-            <div id="prog-new-todo" class="lt-progress-segment"></div>
-
-            <div id="prog-lrn-done" class="lt-progress-segment"></div>
-            <div id="prog-lrn-hold" class="lt-progress-segment"></div>
-            <div id="prog-lrn-todo" class="lt-progress-segment"></div>
-            <div id="prog-lrn-ftr"  class="lt-progress-segment"></div>
-
-            <div id="prog-rev-done" class="lt-progress-segment"></div>
-            <div id="prog-rev-todo" class="lt-progress-segment"></div>
-
-            <div id="prog-rel-done" class="lt-progress-segment"></div>
-            <div id="prog-rel-hold" class="lt-progress-segment"></div>
-            <div id="prog-rel-todo" class="lt-progress-segment"></div>
-            <div id="prog-rel-ftr"  class="lt-progress-segment"></div>
+            <div class="lt-progress-segment new done"></div>
+            <div class="lt-progress-segment new todo"></div>
+            <span></span>
+            <div class="lt-progress-segment learn done"></div>
+            <div class="lt-progress-segment learn done hold"></div>
+            <div class="lt-progress-segment learn todo"></div>
+            <div class="lt-progress-segment learn future"></div>
+            <span></span>
+            <div class="lt-progress-segment review done"></div>
+            <div class="lt-progress-segment review todo"></div>
+            <span></span>
+            <div class="lt-progress-segment re learn done"></div>
+            <div class="lt-progress-segment re learn done hold"></div>
+            <div class="lt-progress-segment re learn todo"></div>
+            <div class="lt-progress-segment re learn future"></div>
         </div>
     """
 
@@ -117,7 +118,14 @@ def upd_progress(*args, **kwargs):
             pass
     
     # (RE)LEARN cards | queue = 1 - intraday, 3 - interday | type = 1 - learning, 3 - relearning
-    db_data = mw.col.db.all(f"SELECT did, due, left, type FROM cards WHERE queue IN (1, 3) AND did IN ({','.join(map(str, dids))})") if dids else []
+    db_data = mw.col.db.all(
+            f"""
+            SELECT did, due, left, type
+            FROM cards
+            WHERE queue IN (1, 3)
+            AND did IN ({','.join(map(str, dids))})
+            """
+        ) if dids else []
     
     rel_n, rel_l, lrn_n, lrn_l = 0, 0, 0, 0
     
@@ -125,7 +133,8 @@ def upd_progress(*args, **kwargs):
 
         steps = steps_setting(card_did, card_state)
 
-        # intraday cards (queue=1) have dues stored as timestamps (=> >10^9(s) = 20010909(iso)), the interday rest (queue=3, not necessarily ivl > 1d as it depends on day cutoff timestamp) have due = day count from epoch=0 (=> << 10^9)
+        # intraday cards (queue=1) have dues stored as timestamps (=> > 10^9(s) = 20010909(iso))
+        # interday cards (queue=3, not necessarily ivl > 1d as it depends on the day cutoff timestamp) have due = day count from epoch=0 (=> << 10^9(d))
         is_ready_now = (due_val <= current_time) if (due_val > 1000000000) else (due_val <= current_day)
         
         if (steps[-left_val] < 1440):
@@ -182,42 +191,50 @@ def upd_progress(*args, **kwargs):
 
     
     # DONE cards
-    done_total = mw.col.db.scalar(f"SELECT count() FROM revlog WHERE id >= ? AND id < ? AND cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))", int((cutoff - 86400) * 1000), int(cutoff * 1000)) or 0 if dids else 0
+    done_total = mw.col.db.scalar(
+            f"""
+            SELECT count() FROM revlog
+            WHERE id >= ? AND id < ?
+            AND cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
+            """,
+            int((cutoff - 86400) * 1000),
+            int(cutoff * 1000)
+        ) or 0 if dids else 0
     done = mw.col.db.first(
-        f"""
-        SELECT 
-            -- 1. New (Total) = learning and has no prior reviews
-            SUM(CASE WHEN r.type = 0 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-            
-            -- 2. Learning (Good/Easy), have prior review
-            SUM(CASE WHEN r.type = 0 AND r.ease IN (3, 4) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-            
-            -- 3. Learning (Again/Hard), have prior review
-            SUM(CASE WHEN r.type = 0 AND r.ease IN (1, 2) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-            
-            -- 4. Review (Total)
-            SUM(CASE WHEN r.type = 1 THEN 1 ELSE 0 END),
-            
-            -- 5. Relearning (Good/Easy)
-            SUM(CASE WHEN r.type = 2 AND r.ease IN (3, 4) THEN 1 ELSE 0 END),
-            
-            -- 6. Relearning (Again/Hard)
-            SUM(CASE WHEN r.type = 2 AND r.ease IN (1, 2) THEN 1 ELSE 0 END)
+            f"""
+            SELECT 
+                -- 1. New (Total) = learning and has no prior reviews
+                SUM(CASE WHEN r.type = 0 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                
+                -- 2. Learning (Good/Easy), have prior review
+                SUM(CASE WHEN r.type = 0 AND r.ease IN (3, 4) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                
+                -- 3. Learning (Again/Hard), have prior review
+                SUM(CASE WHEN r.type = 0 AND r.ease IN (1, 2) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                
+                -- 4. Review (Total)
+                SUM(CASE WHEN r.type = 1 THEN 1 ELSE 0 END),
+                
+                -- 5. Relearning (Good/Easy)
+                SUM(CASE WHEN r.type = 2 AND r.ease IN (3, 4) THEN 1 ELSE 0 END),
+                
+                -- 6. Relearning (Again/Hard)
+                SUM(CASE WHEN r.type = 2 AND r.ease IN (1, 2) THEN 1 ELSE 0 END)
 
-            -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
-            
-        FROM revlog r
-        WHERE r.id >= ? AND r.id < ? 
-        AND r.cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
-        """, 
-        int((cutoff - 86400) * 1000), 
-        int(cutoff * 1000)
-    ) if dids else None
+                -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
+                
+            FROM revlog r
+            WHERE r.id >= ? AND r.id < ? 
+            AND r.cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
+            """, 
+            int((cutoff - 86400) * 1000), 
+            int(cutoff * 1000)
+        ) if dids else None
     done = [count or 0 for count in done] if done else [0] * 6
     
 
     # final count
-    card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(rev_n), int(rel_n), int(lrn_l), int(rel_l)])] 
+    card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(lrn_l), int(rev_n), int(rel_n), int(rel_l)])] 
 
 
 
@@ -237,37 +254,59 @@ def upd_progress(*args, **kwargs):
     log_msg = (
         f"Done: {done_total}={sum(card_counts[:6])} {card_counts[:6]}\\n"
         f"New: {card_counts[6]}\\n"
-        f"Learn: {card_counts[7]}(+{card_counts[10]})\\n"
-        f"Review: {card_counts[8]}\\n"
-        f"Relearn: {card_counts[9]}(+{card_counts[11]})\\n"
+        f"Learn: {card_counts[7]}(+{card_counts[8]})\\n"
+        f"Review: {card_counts[9]}\\n"
+        f"Relearn: {card_counts[10]}(+{card_counts[11]})\\n"
     )
     active_webview.eval((
-            # # diff
-            # f"current = {card_counts};"
-            # f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
-            # f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
-            # f"if (past[0] !== current[0]) {{console.log(`+${{current[0]-past[0]}}`,'done (new)');}}"
-            # f"if (past[1] !== current[1]) {{console.log(`+${{current[1]-past[1]}}`,'done (learn)');}}"
-            # f"if (past[2] !== current[2]) {{console.log(`+${{current[2]-past[2]}}`,'done (learn | hold)');}}"
-            # f"if (past[3] !== current[3]) {{console.log(`+${{current[3]-past[3]}}`,'done (review)');}}"
-            # f"if (past[4] !== current[4]) {{console.log(`+${{current[4]-past[4]}}`,'done (relearn)');}}"
-            # f"if (past[5] !== current[5]) {{console.log(`+${{current[5]-past[5]}}`,'done (relearn | hold)');}}"
-            # f"if (past[6] !== current[6]) {{console.log(`${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}}`,'new');}}"
-            # f"if (past[7] !== current[7] || past[10] !== current[10]) {{console.log(`${{current[7]>past[7]?'+':''}}${{current[7]-past[7]}}`,`(${{current[10]>past[10]?'+':''}}${{current[10]-past[10]}})`,'learn');}}"
-            # f"if (past[8] !== current[8]) {{console.log(`${{current[8]>past[8]?'+':''}}${{current[8]-past[8]}}`,'review');}}"
-            # f"if (past[9] !== current[9] || past[11] !== current[11]) {{console.log(`${{current[9]>past[9]?'+':''}}${{current[9]-past[9]}}`,`(${{current[11]>past[11]?'+':''}}${{current[11]-past[11]}})`,'relearn');}}"
+            # diff
+            f"current = {card_counts};"
+            f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
+            f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
+            f"if (past[0] !== current[0]) {{console.log(`+${{current[0]-past[0]}}`,'done (new)');}}"
+            f"if (past[1] !== current[1]) {{console.log(`+${{current[1]-past[1]}}`,'done (learn)');}}"
+            f"if (past[2] !== current[2]) {{console.log(`+${{current[2]-past[2]}}`,'done (learn | hold)');}}"
+            f"if (past[3] !== current[3]) {{console.log(`+${{current[3]-past[3]}}`,'done (review)');}}"
+            f"if (past[4] !== current[4]) {{console.log(`+${{current[4]-past[4]}}`,'done (relearn)');}}"
+            f"if (past[5] !== current[5]) {{console.log(`+${{current[5]-past[5]}}`,'done (relearn | hold)');}}"
+            f"if (past[6] !== current[6]) {{console.log(`${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}}`,'new');}}"
+            f"if (past[7] !== current[7] || past[8] !== current[8]) {{console.log(`${{current[7]>past[7]?'+':''}}${{current[7]-past[7]}}`,`(${{current[8]>past[8]?'+':''}}${{current[8]-past[8]}})`,'learn');}}"
+            f"if (past[9] !== current[9]) {{console.log(`${{current[9]>past[9]?'+':''}}${{current[9]-past[9]}}`,'review');}}"
+            f"if (past[10] !== current[10] || past[11] !== current[11]) {{console.log(`${{current[10]>past[10]?'+':''}}${{current[10]-past[10]}}`,`(${{current[11]>past[11]?'+':''}}${{current[11]-past[11]}})`,'relearn');}}"
 
             # result
             f"console.log('{log_msg}');"
         ))
 
-    grow_values = card_counts if sum(card_counts) > 0 else [1]*len(card_counts)
-    ids = ["prog-new-done", "prog-lrn-done", "prog-lrn-hold", "prog-rev-done", "prog-rel-done", "prog-rel-hold", "prog-new-todo", "prog-lrn-todo", "prog-rev-todo", "prog-rel-todo", "prog-lrn-ftr", "prog-rel-ftr"]
+    queries = [
+        ".new.done",
+        ".learn.done", ".learn.hold",
+        ".review.done",
+        ".re.learn.done", ".re.learn.hold",
+        ".new.todo", 
+        ".learn.todo", ".learn.future", 
+        ".review.todo",
+        ".re.learn.todo", ".re.learn.future"
+        ]
 
     assign_stats_js = f"""
-    (() => {{
-        { '; '.join([f"var segmL = document.getElementById('{Lid}'); if(segmL) {{ segmL.style.flexGrow = {grow}; segmL.classList.add('animated'); }}" for Lid, grow in zip(ids, grow_values)]) }
-    }})();
+        (() => {{
+            { "".join([f"""
+                    (()=>{{
+                        const segmL = document.querySelector('.lt-progress-segment{query}');
+                        if(segmL) {{ 
+                            segmL.style.setProperty('--count', {count});
+                            if ({count} > 0) {{
+                                // min-width -> 1px to avoid flex collapse
+                                segmL.classList.remove('empty');
+                            }} else {{
+                                segmL.classList.add('empty');
+                            }}
+                            setTimeout(()=>segmL.classList.add('animated'),100);
+                        }}
+                    }})();
+                """ for query, count in zip(queries, card_counts)]) }
+        }})();
     """
     active_webview.eval(assign_stats_js)
 

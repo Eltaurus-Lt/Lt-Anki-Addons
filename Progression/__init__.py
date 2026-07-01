@@ -29,11 +29,12 @@ from aqt.overview import Overview
 from . import Webview_injector
 from aqt.utils import tooltip
 
-# todo: 
-#   all done ratings
+# todo:
+#       optimize done subqueries
 #   future queued
 #   iterate over decks for home screen -> enhance main window
 #
+# empty learning steps?
 # learning siblings
 # filtered decks
 # manually scheduled cards
@@ -42,19 +43,29 @@ from aqt.utils import tooltip
 def progress_bar_template():
     return """
         <div id="lt-progress-bar">
-            <div class="lt-progress-segment new done"></div>
+            <div class="lt-progress-segment new done again"></div>
+            <div class="lt-progress-segment new done hard"></div>
+            <div class="lt-progress-segment new done good"></div>
+            <div class="lt-progress-segment new done easy"></div>
             <div class="lt-progress-segment new todo"></div>
             <span></span>
-            <div class="lt-progress-segment learn done"></div>
-            <div class="lt-progress-segment learn done hold"></div>
+            <div class="lt-progress-segment learn done again"></div>
+            <div class="lt-progress-segment learn done hard"></div>
+            <div class="lt-progress-segment learn done good"></div>
+            <div class="lt-progress-segment learn done easy"></div>
             <div class="lt-progress-segment learn todo"></div>
             <div class="lt-progress-segment learn future"></div>
             <span></span>
-            <div class="lt-progress-segment review done"></div>
+            <div class="lt-progress-segment review done again"></div>
+            <div class="lt-progress-segment review done hard"></div>
+            <div class="lt-progress-segment review done good"></div>
+            <div class="lt-progress-segment review done easy"></div>
             <div class="lt-progress-segment review todo"></div>
             <span></span>
-            <div class="lt-progress-segment re learn done"></div>
-            <div class="lt-progress-segment re learn done hold"></div>
+            <div class="lt-progress-segment re learn done again"></div>
+            <div class="lt-progress-segment re learn done hard"></div>
+            <div class="lt-progress-segment re learn done good"></div>
+            <div class="lt-progress-segment re learn done easy"></div>
             <div class="lt-progress-segment re learn todo"></div>
             <div class="lt-progress-segment re learn future"></div>
         </div>
@@ -203,23 +214,29 @@ def upd_progress(*args, **kwargs):
     done = mw.col.db.first(
             f"""
             SELECT 
-                -- 1. New (Total) = learning and has no prior reviews
-                SUM(CASE WHEN r.type = 0 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                -- New = learning and has no prior reviews
+                SUM(CASE WHEN r.type = 0 AND r.ease = 1 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 2 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 3 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 4 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
                 
-                -- 2. Learning (Good/Easy), have prior review
-                SUM(CASE WHEN r.type = 0 AND r.ease IN (3, 4) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                -- Learning (have prior review)
+                SUM(CASE WHEN r.type = 0 AND r.ease = 1 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 2 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 3 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 0 AND r.ease = 4 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
                 
-                -- 3. Learning (Again/Hard), have prior review
-                SUM(CASE WHEN r.type = 0 AND r.ease IN (1, 2) AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
+                -- Review
+                SUM(CASE WHEN r.type = 1 AND r.ease = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 1 AND r.ease = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 1 AND r.ease = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 1 AND r.ease = 4 THEN 1 ELSE 0 END),
                 
-                -- 4. Review (Total)
-                SUM(CASE WHEN r.type = 1 THEN 1 ELSE 0 END),
-                
-                -- 5. Relearning (Good/Easy)
-                SUM(CASE WHEN r.type = 2 AND r.ease IN (3, 4) THEN 1 ELSE 0 END),
-                
-                -- 6. Relearning (Again/Hard)
-                SUM(CASE WHEN r.type = 2 AND r.ease IN (1, 2) THEN 1 ELSE 0 END)
+                -- Relearning
+                SUM(CASE WHEN r.type = 2 AND r.ease = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 2 AND r.ease = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 2 AND r.ease = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN r.type = 2 AND r.ease = 4 THEN 1 ELSE 0 END)
 
                 -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
                 
@@ -231,7 +248,7 @@ def upd_progress(*args, **kwargs):
             int(cutoff * 1000)
         ) if dids else None
     done = [count or 0 for count in done] if done else [0] * 6
-    
+
 
     # final count
     card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(lrn_l), int(rev_n), int(rel_n), int(rel_l)])] 
@@ -252,37 +269,38 @@ def upd_progress(*args, **kwargs):
 
     # logging to JS console:
     log_msg = (
-        f"Done: {done_total}={sum(card_counts[:6])} {card_counts[:6]}\\n"
-        f"New: {card_counts[6]}\\n"
-        f"Learn: {card_counts[7]}(+{card_counts[8]})\\n"
-        f"Review: {card_counts[9]}\\n"
-        f"Relearn: {card_counts[10]}(+{card_counts[11]})\\n"
+        f"Done: {done_total}={sum(card_counts[:16])} {card_counts[:4]} {card_counts[4:8]} {card_counts[8:12]} {card_counts[12:16]}\\n"
+        f"New: {card_counts[16]}\\n"
+        f"Learn: {card_counts[17]}(+{card_counts[18]})\\n"
+        f"Review: {card_counts[19]}\\n"
+        f"Relearn: {card_counts[20]}(+{card_counts[21]})\\n"
     )
     active_webview.eval((
             # diff
             f"current = {card_counts};"
+            f"sum = arr=>arr.reduce((a,b)=>a+b,0);"
             f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
             f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
-            f"if (past[0] !== current[0]) {{console.log(`+${{current[0]-past[0]}}`,'done (new)');}}"
-            f"if (past[1] !== current[1]) {{console.log(`+${{current[1]-past[1]}}`,'done (learn)');}}"
-            f"if (past[2] !== current[2]) {{console.log(`+${{current[2]-past[2]}}`,'done (learn | hold)');}}"
-            f"if (past[3] !== current[3]) {{console.log(`+${{current[3]-past[3]}}`,'done (review)');}}"
-            f"if (past[4] !== current[4]) {{console.log(`+${{current[4]-past[4]}}`,'done (relearn)');}}"
-            f"if (past[5] !== current[5]) {{console.log(`+${{current[5]-past[5]}}`,'done (relearn | hold)');}}"
-            f"if (past[6] !== current[6]) {{console.log(`${{current[6]>past[6]?'+':''}}${{current[6]-past[6]}}`,'new');}}"
-            f"if (past[7] !== current[7] || past[8] !== current[8]) {{console.log(`${{current[7]>past[7]?'+':''}}${{current[7]-past[7]}}`,`(${{current[8]>past[8]?'+':''}}${{current[8]-past[8]}})`,'learn');}}"
-            f"if (past[9] !== current[9]) {{console.log(`${{current[9]>past[9]?'+':''}}${{current[9]-past[9]}}`,'review');}}"
-            f"if (past[10] !== current[10] || past[11] !== current[11]) {{console.log(`${{current[10]>past[10]?'+':''}}${{current[10]-past[10]}}`,`(${{current[11]>past[11]?'+':''}}${{current[11]-past[11]}})`,'relearn');}}"
+            f"if (past[0] !== current[0] || past[1] !== current[1] || past[2] !== current[2] || past[3] !== current[3]) {{console.log(`+${{sum(current.slice(0,4))-sum(past.slice(0,4))}}`,'done (new)');}}"
+            f"if (past[6] !== current[6] || past[7] !== current[7]) {{console.log(`+${{sum(current.slice(6,8))-sum(past.slice(6,8))}}`,'done (learn)');}}"
+            f"if (past[4] !== current[4] || past[5] !== current[5]) {{console.log(`+${{sum(current.slice(4,6))-sum(past.slice(4,6))}}`,'done (learn | hold)');}}"
+            f"if (past[8] !== current[8] || past[9] !== current[9] || past[10] !== current[10] || past[11] !== current[11]) {{console.log(`+${{sum(current.slice(8,12))-sum(past.slice(8,12))}}`,'done (review)');}}"
+            f"if (past[14] !== current[14] || past[15] !== current[15]) {{console.log(`+${{sum(current.slice(14,16))-sum(past.slice(14,16))}}`,'done (relearn)');}}"
+            f"if (past[12] !== current[12] || past[13] !== current[13]) {{console.log(`+${{sum(current.slice(12,14))-sum(past.slice(12,14))}}`,'done (relearn | hold)');}}"
+            f"if (past[16] !== current[16]) {{console.log(`${{current[16]>past[16]?'+':''}}${{current[16]-past[16]}}`,'new');}}"
+            f"if (past[17] !== current[17] || past[18] !== current[18]) {{console.log(`${{current[17]>past[17]?'+':''}}${{current[17]-past[17]}}`,`(${{current[18]>past[18]?'+':''}}${{current[18]-past[18]}})`,'learn');}}"
+            f"if (past[19] !== current[19]) {{console.log(`${{current[19]>past[19]?'+':''}}${{current[19]-past[19]}}`,'review');}}"
+            f"if (past[20] !== current[20] || past[21] !== current[21]) {{console.log(`${{current[20]>past[20]?'+':''}}${{current[20]-past[20]}}`,`(${{current[21]>past[21]?'+':''}}${{current[21]-past[21]}})`,'relearn');}}"
 
             # result
             f"console.log('{log_msg}');"
         ))
 
     queries = [
-        ".new.done",
-        ".learn.done", ".learn.hold",
-        ".review.done",
-        ".re.learn.done", ".re.learn.hold",
+        ".new.again",".new.hard",".new.good",".new.easy",
+        ".learn.again", ".learn.hard", ".learn.good", ".learn.easy",
+        ".review.again", ".review.hard", ".review.good", ".review.easy",
+        ".re.learn.again", ".re.learn.hard", ".re.learn.good", ".re.learn.easy",
         ".new.todo", 
         ".learn.todo", ".learn.future", 
         ".review.todo",

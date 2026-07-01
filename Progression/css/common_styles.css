@@ -4,6 +4,7 @@
     --rate-again: #a50026;
     --rate-hard: #fdbe70;
     --rate-good: #b6e076;
+    --rate-easy: #006837;
 
     --prog-done: var(--rate-good);
     --prog-hold: var(--rate-hard);
@@ -42,7 +43,7 @@
     height: 5px;
     flex-grow: var(--count);
 
-    background: var(--state-color);
+    background: oklch(from var(--state-color) calc(.75*l) calc(.5*c) h);
 }
 
 .lt-progress-segment.empty {
@@ -67,13 +68,22 @@
 }
 
 .done {
-    --rate-color: var(--prog-done);
-    background: color-mix(in lab, var(--rate-color) 80%, var(--state-color));
+    background: color-mix(in lab, var(--rate-color) 90%, var(--state-color));
 }
 
-.hold {
-    --rate-color: var(--prog-hold);
+.again {
+    --rate-color: var(--rate-again);
 }
+.hard {
+    --rate-color: var(--rate-hard);
+}
+.good {
+    --rate-color: var(--rate-good);
+}
+.easy {
+    --rate-color: var(--rate-easy);
+}
+
 
 .future {
     opacity: 0.4;

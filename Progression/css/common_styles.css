@@ -1,13 +1,24 @@
 :root {
     --prog-bg: #e0e0e0;
 
-    --rate-again: #a50026;
-    --rate-hard: #fdbe70;
-    --rate-good: #b6e076;
-    --rate-easy: #006837;
+    /* Stat screen colors */
+    --stat-again: #a50026;
+    --stat-hard: #fdbe70;
+    --stat-good: #b6e076;
+    --stat-easy: #006837;
 
-    --prog-done: var(--rate-good);
-    --prog-hold: var(--rate-hard);
+    /* AnkiDroid colors */
+    --ad-again: #ffcdd2;
+    --ad-again-text: #b71c1c;
+    --ad-hard: #ffe0b2;
+    --ad-hard-text: #b33800;
+    --ad-good: #c8e6c9;
+    --ad-good-text: #1b5e20;
+    --ad-easy: #b3e5fc;
+    --ad-easy-text: #01579b;
+
+    --prog-done: var(--stat-good);
+    --prog-hold: var(--stat-hard);
 
     --prog-review: var(--state-review);
     --prog-relearn: var(--state-learn);
@@ -43,7 +54,7 @@
     height: 5px;
     flex-grow: var(--count);
 
-    background: oklch(from var(--state-color) calc(.75*l) calc(.75*c) h);
+    background: oklch(from var(--state-color) calc(.8*l) calc(.8*c) h);
 }
 
 .lt-progress-segment.empty {
@@ -68,20 +79,20 @@
 }
 
 .done {
-    background: color-mix(in lab, color-mix(in lab, var(--rate-color) 75%, var(--state-color)) 50%, yellowgreen);
+    background: color-mix(in lab, var(--rate-color) 90%, var(--state-color));
 }
 
 .again {
-    --rate-color: var(--rate-again);
+    --rate-color: color-mix(in lab, var(--ad-again) 50%, var(--ad-again-text));
 }
 .hard {
-    --rate-color: var(--rate-hard);
+    --rate-color: color-mix(in lab, var(--ad-hard) 50%, var(--ad-hard-text));
 }
 .good {
-    --rate-color: var(--rate-good);
+    --rate-color: color-mix(in lab, var(--ad-good) 50%, var(--ad-good-text));
 }
 .easy {
-    --rate-color: var(--rate-easy);
+    --rate-color: color-mix(in lab, var(--ad-easy) 50%, var(--ad-easy-text));
 }
 
 

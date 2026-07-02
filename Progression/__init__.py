@@ -30,9 +30,10 @@ from . import Webview_injector
 from aqt.utils import tooltip
 
 # todo:
-#       optimize done subqueries
 #   future queued
 #   iterate over decks for home screen -> enhance main window
+#   remove done_total
+#   congratulations
 #
 # empty learning steps?
 # learning siblings
@@ -211,48 +212,50 @@ def upd_progress(*args, **kwargs):
             int((cutoff - 86400) * 1000),
             int(cutoff * 1000)
         ) or 0 if dids else 0
-    done = mw.col.db.first(
+    done = mw.col.db.all(
             f"""
+            WITH today_revlog AS (
+                SELECT r.id, r.cid, r.type, r.ease
+                FROM revlog r
+                WHERE r.id >= ? AND r.id < ? 
+                AND r.cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
+            ),
+            first_reviews AS (
+                SELECT cid, MIN(id) AS review
+                FROM revlog
+                WHERE cid IN (SELECT DISTINCT cid FROM today_revlog)
+                GROUP BY cid
+            )
             SELECT 
-                -- New = learning and has no prior reviews
-                SUM(CASE WHEN r.type = 0 AND r.ease = 1 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 2 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 3 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 4 AND r.id = (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                
-                -- Learning (have prior review)
-                SUM(CASE WHEN r.type = 0 AND r.ease = 1 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 2 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 3 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 0 AND r.ease = 4 AND r.id != (SELECT MIN(id) FROM revlog WHERE cid = r.cid) THEN 1 ELSE 0 END),
-                
-                -- Review
-                SUM(CASE WHEN r.type = 1 AND r.ease = 1 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 1 AND r.ease = 2 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 1 AND r.ease = 3 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 1 AND r.ease = 4 THEN 1 ELSE 0 END),
-                
-                -- Relearning
-                SUM(CASE WHEN r.type = 2 AND r.ease = 1 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 2 AND r.ease = 2 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 2 AND r.ease = 3 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN r.type = 2 AND r.ease = 4 THEN 1 ELSE 0 END)
-
-                -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
-                
-            FROM revlog r
-            WHERE r.id >= ? AND r.id < ? 
-            AND r.cid IN (SELECT id FROM cards WHERE did IN ({','.join(map(str, dids))}))
+                CASE
+                    WHEN r.type = 0 AND r.id  = first.review THEN 'new'
+                    WHEN r.type = 0 AND r.id != first.review THEN 'learning'
+                    WHEN r.type = 1                          THEN 'review'
+                    WHEN r.type = 2                          THEN 'relearning'
+            -- todo: type = 3 - filtered, type = 4 - manual (if reset -> new)
+                END AS state,
+                r.ease,
+                COUNT(*) AS total
+            FROM today_revlog r
+            LEFT JOIN first_reviews first ON r.cid = first.cid
+            GROUP BY state, r.ease;
             """, 
             int((cutoff - 86400) * 1000), 
             int(cutoff * 1000)
         ) if dids else None
-    done = [count or 0 for count in done] if done else [0] * 6
-
+    done_map = {(row[0], row[1]): row[2] for row in (done or {}) if row[0]}
 
     # final count
-    card_counts = [int(count) for count in ( done + [int(new_n), int(lrn_n), int(lrn_l), int(rev_n), int(rel_n), int(rel_l)])] 
-
+    card_counts = [
+        int(count) for count in (
+            [
+                done_map.get((state, ease), 0)
+                for state in ['new', 'learning', 'review', 'relearning']
+                for ease in [1, 2, 3, 4]
+            ]
+            + [new_n, lrn_n, lrn_l, rev_n, rel_n, rel_l]
+        )
+    ]
 
 
     # upd display and log

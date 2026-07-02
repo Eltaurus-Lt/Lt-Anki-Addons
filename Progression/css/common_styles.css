@@ -43,7 +43,7 @@
     height: 5px;
     flex-grow: var(--count);
 
-    background: oklch(from var(--state-color) calc(.75*l) calc(.5*c) h);
+    background: oklch(from var(--state-color) calc(.75*l) calc(.75*c) h);
 }
 
 .lt-progress-segment.empty {
@@ -68,7 +68,7 @@
 }
 
 .done {
-    background: color-mix(in lab, var(--rate-color) 90%, var(--state-color));
+    background: color-mix(in lab, color-mix(in lab, var(--rate-color) 75%, var(--state-color)) 50%, yellowgreen);
 }
 
 .again {

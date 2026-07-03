@@ -1,5 +1,5 @@
 :root {
-    --prog-bg: #e0e0e0;
+    --prog-bg: var(--canvas-overlay);
 
     /* Stat screen colors */
     --stat-again: #a50026;
@@ -17,8 +17,7 @@
     --ad-easy: #b3e5fc;
     --ad-easy-text: #01579b;
 
-    --prog-done: var(--stat-good);
-    --prog-hold: var(--stat-hard);
+    --prog-done: yellowgreen;
 
     --prog-review: var(--state-review);
     --prog-relearn: var(--state-learn);
@@ -39,12 +38,11 @@
     left: 0;
     width: 100vw;
 
-    background-color: var(--canvas-overlay, transparent);
+    background-color: var(--prog-bg);
 /*    box-shadow: 0 0 7px #0004;*/
 }
 
 #lt-progress-bar span {
-    flex-basis: 100%;
     display: block;
     height: 0;
 }
@@ -54,13 +52,12 @@
     height: 5px;
     flex-grow: var(--count);
 
-    background: linear-gradient(to right, color-mix(in lab, var(--state-color) 42%, transparent), var(--state-color));
+    background: var(--state-color);
 }
 
 .prog-segment.empty {
     height: 0;
 }
-
 
 .prog-segment.new {
     --state-color: var(--prog-new);
@@ -74,37 +71,27 @@
     --state-color: var(--prog-review);
 }
 
-
 .prog-segment.re {
     --state-color: var(--prog-relearn);
 }
 
 .prog-segment.done {
-    background: #9526ff;
+    background: var(--prog-done);
 }
 
-.prog-segment.again {
-    --rate-color: color-mix(in lab, var(--ad-again) 50%, var(--ad-again-text));
-}
-.prog-segment.hard {
-    --rate-color: color-mix(in lab, var(--ad-hard) 50%, var(--ad-hard-text));
-}
-.prog-segment.good {
-    --rate-color: color-mix(in lab, var(--ad-good) 50%, var(--ad-good-text));
-}
-.prog-segment.easy {
-    --rate-color: color-mix(in lab, var(--ad-easy) 50%, var(--ad-easy-text));
-}
-
+.prog-segment.future,
 .prog-segment.cooldown {
-    opacity: 0.4;
+    opacity: 0.15;
 }
-
-.prog-segment.future {
-    opacity: 0.2;
-}
-
 
 .prog-segment.animated {
     transition: flex-grow 0.2s ease-in-out, height 0.2s ease-in-out;
+}
+
+.prog-segment.done {
+    order: -1;
+}
+.prog-segment.future,
+.prog-segment.cooldown {
+    order: 1;
 }

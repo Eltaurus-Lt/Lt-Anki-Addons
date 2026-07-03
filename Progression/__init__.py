@@ -30,9 +30,8 @@ from . import Webview_injector
 from aqt.utils import tooltip
 
 # todo:
-#   future queued
 #   iterate over decks for home screen -> enhance main window
-#   remove done_total
+#   remove done_total + tooltips
 #   congratulations
 #
 # empty learning steps?
@@ -44,31 +43,33 @@ from aqt.utils import tooltip
 def progress_bar_template():
     return """
         <div id="lt-progress-bar">
-            <div class="lt-progress-segment new done again"></div>
-            <div class="lt-progress-segment new done hard"></div>
-            <div class="lt-progress-segment new done good"></div>
-            <div class="lt-progress-segment new done easy"></div>
-            <div class="lt-progress-segment new todo"></div>
+            <div class="prog-segment new done again"></div>
+            <div class="prog-segment new done hard"></div>
+            <div class="prog-segment new done good"></div>
+            <div class="prog-segment new done easy"></div>
+            <div class="prog-segment new todo"></div>
             <span></span>
-            <div class="lt-progress-segment learn done again"></div>
-            <div class="lt-progress-segment learn done hard"></div>
-            <div class="lt-progress-segment learn done good"></div>
-            <div class="lt-progress-segment learn done easy"></div>
-            <div class="lt-progress-segment learn todo"></div>
-            <div class="lt-progress-segment learn future"></div>
+            <div class="prog-segment learn done again"></div>
+            <div class="prog-segment learn done hard"></div>
+            <div class="prog-segment learn done good"></div>
+            <div class="prog-segment learn done easy"></div>
+            <div class="prog-segment learn todo"></div>
+            <div class="prog-segment learn todo cooldown"></div>
+            <div class="prog-segment learn todo future"></div>
             <span></span>
-            <div class="lt-progress-segment review done again"></div>
-            <div class="lt-progress-segment review done hard"></div>
-            <div class="lt-progress-segment review done good"></div>
-            <div class="lt-progress-segment review done easy"></div>
-            <div class="lt-progress-segment review todo"></div>
+            <div class="prog-segment review done again"></div>
+            <div class="prog-segment review done hard"></div>
+            <div class="prog-segment review done good"></div>
+            <div class="prog-segment review done easy"></div>
+            <div class="prog-segment review todo"></div>
             <span></span>
-            <div class="lt-progress-segment re learn done again"></div>
-            <div class="lt-progress-segment re learn done hard"></div>
-            <div class="lt-progress-segment re learn done good"></div>
-            <div class="lt-progress-segment re learn done easy"></div>
-            <div class="lt-progress-segment re learn todo"></div>
-            <div class="lt-progress-segment re learn future"></div>
+            <div class="prog-segment re learn done again"></div>
+            <div class="prog-segment re learn done hard"></div>
+            <div class="prog-segment re learn done good"></div>
+            <div class="prog-segment re learn done easy"></div>
+            <div class="prog-segment re learn todo"></div>
+            <div class="prog-segment re learn todo cooldown"></div>
+            <div class="prog-segment re learn todo future"></div>
         </div>
     """
 
@@ -139,7 +140,7 @@ def upd_progress(*args, **kwargs):
             """
         ) if dids else []
     
-    rel_n, rel_l, lrn_n, lrn_l = 0, 0, 0, 0
+    rel_n, rel_q, rel_l, lrn_n, lrn_q, lrn_l = 0, 0, 0, 0, 0, 0
     
     for card_did, due_val, left_val, card_state in db_data:
 
@@ -152,14 +153,16 @@ def upd_progress(*args, **kwargs):
         if (steps[-left_val] < 1440):
             # short-term card
             
-            today_steps = short_term_count(steps[-left_val:]) - is_ready_now
+            future_steps = short_term_count(steps[-left_val:]) - 1
 
             if (card_state == 3): # relearning
                 rel_n += is_ready_now
-                rel_l += today_steps
+                rel_q += 1 - is_ready_now
+                rel_l += future_steps
             else:
                 lrn_n += is_ready_now
-                lrn_l += today_steps
+                lrn_q += 1 - is_ready_now
+                lrn_l += future_steps
         else:
             # long-term card
             if is_ready_now:
@@ -179,7 +182,7 @@ def upd_progress(*args, **kwargs):
         rel_l += rel_n # change to 0?
         lrn_l += lrn_n # change to 0?
         rel_n = 0
-        lrn_n = 0 
+        lrn_n = 0
     else:
         total_db_now = rel_n + lrn_n
         if total_db_now > 0:
@@ -253,7 +256,7 @@ def upd_progress(*args, **kwargs):
                 for state in ['new', 'learning', 'review', 'relearning']
                 for ease in [1, 2, 3, 4]
             ]
-            + [new_n, lrn_n, lrn_l, rev_n, rel_n, rel_l]
+            + [new_n, lrn_n, lrn_q, lrn_l, rev_n, rel_n, rel_q, rel_l]
         )
     ]
 
@@ -274,9 +277,9 @@ def upd_progress(*args, **kwargs):
     log_msg = (
         f"Done: {done_total}={sum(card_counts[:16])} {card_counts[:4]} {card_counts[4:8]} {card_counts[8:12]} {card_counts[12:16]}\\n"
         f"New: {card_counts[16]}\\n"
-        f"Learn: {card_counts[17]}(+{card_counts[18]})\\n"
-        f"Review: {card_counts[19]}\\n"
-        f"Relearn: {card_counts[20]}(+{card_counts[21]})\\n"
+        f"Learn: {card_counts[17]}(+{card_counts[18]}..{card_counts[19]})\\n"
+        f"Review: {card_counts[20]}\\n"
+        f"Relearn: {card_counts[21]}(+{card_counts[22]}..{card_counts[23]})\\n"
     )
     active_webview.eval((
             # diff
@@ -291,9 +294,9 @@ def upd_progress(*args, **kwargs):
             f"if (past[14] !== current[14] || past[15] !== current[15]) {{console.log(`+${{sum(current.slice(14,16))-sum(past.slice(14,16))}}`,'done (relearn)');}}"
             f"if (past[12] !== current[12] || past[13] !== current[13]) {{console.log(`+${{sum(current.slice(12,14))-sum(past.slice(12,14))}}`,'done (relearn | hold)');}}"
             f"if (past[16] !== current[16]) {{console.log(`${{current[16]>past[16]?'+':''}}${{current[16]-past[16]}}`,'new');}}"
-            f"if (past[17] !== current[17] || past[18] !== current[18]) {{console.log(`${{current[17]>past[17]?'+':''}}${{current[17]-past[17]}}`,`(${{current[18]>past[18]?'+':''}}${{current[18]-past[18]}})`,'learn');}}"
-            f"if (past[19] !== current[19]) {{console.log(`${{current[19]>past[19]?'+':''}}${{current[19]-past[19]}}`,'review');}}"
-            f"if (past[20] !== current[20] || past[21] !== current[21]) {{console.log(`${{current[20]>past[20]?'+':''}}${{current[20]-past[20]}}`,`(${{current[21]>past[21]?'+':''}}${{current[21]-past[21]}})`,'relearn');}}"
+            f"if (past[17] !== current[17] || past[18] !== current[18] || past[19] !== current[19]) {{console.log(`${{current[17]>past[17]?'+':''}}${{current[17]-past[17]}}`,`(${{current[18]>past[18]?'+':''}}${{current[18]-past[18]}}..${{current[19]>past[19]?'+':''}}${{current[19]-past[19]}})`,'learn');}}"
+            f"if (past[20] !== current[20]) {{console.log(`${{current[20]>past[20]?'+':''}}${{current[20]-past[20]}}`,'review');}}"
+            f"if (past[21] !== current[21] || past[22] !== current[22] || past[23] !== current[23]) {{console.log(`${{current[21]>past[21]?'+':''}}${{current[21]-past[21]}}`,`(${{current[22]>past[22]?'+':''}}${{current[22]-past[22]}}..${{current[23]>past[23]?'+':''}}${{current[23]-past[23]}})`,'relearn');}}"
 
             # result
             f"console.log('{log_msg}');"
@@ -305,16 +308,16 @@ def upd_progress(*args, **kwargs):
         ".review.again", ".review.hard", ".review.good", ".review.easy",
         ".re.learn.again", ".re.learn.hard", ".re.learn.good", ".re.learn.easy",
         ".new.todo", 
-        ".learn.todo", ".learn.future", 
+        ".learn.todo", ".learn.cooldown", ".learn.future", 
         ".review.todo",
-        ".re.learn.todo", ".re.learn.future"
+        ".re.learn.todo", ".re.learn.cooldown", ".re.learn.future"
         ]
 
     assign_stats_js = f"""
         (() => {{
             { "".join([f"""
                     (()=>{{
-                        const segmL = document.querySelector('.lt-progress-segment{query}');
+                        const segmL = document.querySelector('.prog-segment{query}');
                         if(segmL) {{ 
                             segmL.style.setProperty('--count', {count});
                             if ({count} > 0) {{

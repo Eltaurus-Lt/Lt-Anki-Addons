@@ -39,7 +39,7 @@
     left: 0;
     width: 100vw;
 
-    background-color: var(--prog-bg);
+    background-color: var(--canvas-overlay, transparent);
 /*    box-shadow: 0 0 7px #0004;*/
 }
 
@@ -49,58 +49,62 @@
     height: 0;
 }
 
-.lt-progress-segment {
+.prog-segment {
     flex-basis: 0;
     height: 5px;
     flex-grow: var(--count);
 
-    background: oklch(from var(--state-color) calc(.8*l) calc(.8*c) h);
+    background: linear-gradient(to right, color-mix(in lab, var(--state-color) 42%, transparent), var(--state-color));
 }
 
-.lt-progress-segment.empty {
+.prog-segment.empty {
     height: 0;
 }
 
 
-.new {
+.prog-segment.new {
     --state-color: var(--prog-new);
 }
 
-.learn {
+.prog-segment.learn {
     --state-color: var(--prog-learn);
 }
 
-.review {
+.prog-segment.review {
     --state-color: var(--prog-review);
 }
 
-.re {
+
+.prog-segment.re {
     --state-color: var(--prog-relearn);
 }
 
-.done {
-    background: color-mix(in lab, var(--rate-color) 90%, var(--state-color));
+.prog-segment.done {
+    background: #9526ff;
 }
 
-.again {
+.prog-segment.again {
     --rate-color: color-mix(in lab, var(--ad-again) 50%, var(--ad-again-text));
 }
-.hard {
+.prog-segment.hard {
     --rate-color: color-mix(in lab, var(--ad-hard) 50%, var(--ad-hard-text));
 }
-.good {
+.prog-segment.good {
     --rate-color: color-mix(in lab, var(--ad-good) 50%, var(--ad-good-text));
 }
-.easy {
+.prog-segment.easy {
     --rate-color: color-mix(in lab, var(--ad-easy) 50%, var(--ad-easy-text));
 }
 
-
-.future {
+.prog-segment.cooldown {
     opacity: 0.4;
 }
 
+.prog-segment.future {
+    opacity: 0.2;
+}
 
-.lt-progress-segment.animated {
+
+.prog-segment.animated {
     transition: flex-grow 0.2s ease-in-out, height 0.2s ease-in-out;
 }

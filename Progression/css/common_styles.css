@@ -62,17 +62,27 @@
 .prog-segment.new {
     --state-color: var(--prog-new);
 }
-
 .prog-segment.learn {
     --state-color: var(--prog-learn);
 }
-
 .prog-segment.review {
     --state-color: var(--prog-review);
 }
-
 .prog-segment.re {
     --state-color: var(--prog-relearn);
+}
+
+.prog-segment.again {
+    --rate-color: var(--stat-again);
+}
+.prog-segment.hard {
+    --rate-color: var(--stat-hard);
+}
+.prog-segment.good {
+    --rate-color: var(--stat-good);
+}
+.prog-segment.easy {
+    --rate-color: var(--stat-easy);
 }
 
 .prog-segment.done {
@@ -85,7 +95,7 @@
 }
 
 .prog-segment.animated {
-    transition: flex-grow 0.2s ease-in-out, height 0.2s ease-in-out;
+    transition: flex-grow 0.2s ease-in-out;
 }
 
 .prog-segment.done {

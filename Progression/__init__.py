@@ -27,18 +27,6 @@ from aqt.deckbrowser import DeckBrowser
 from aqt.overview import Overview
 
 from . import Webview_injector
-from aqt.utils import tooltip
-
-# todo:
-#   iterate over decks for home screen -> enhance main window
-#   remove done_total + tooltips
-#   congratulations
-#
-# empty learning steps?
-# learning siblings
-# filtered decks
-# manually scheduled cards
-# non-monotonic learning steps?
 
 def progress_bar_template():
     return """
@@ -282,21 +270,21 @@ def upd_progress(*args, **kwargs):
         f"Relearn: {card_counts[21]}(+{card_counts[22]}..{card_counts[23]})\\n"
     )
     active_webview.eval((
-            # diff
-            f"current = {card_counts};"
-            f"sum = arr=>arr.reduce((a,b)=>a+b,0);"
-            f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
-            f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
-            f"if (past[0] !== current[0] || past[1] !== current[1] || past[2] !== current[2] || past[3] !== current[3]) {{console.log(`+${{sum(current.slice(0,4))-sum(past.slice(0,4))}}`,'done (new)');}}"
-            f"if (past[6] !== current[6] || past[7] !== current[7]) {{console.log(`+${{sum(current.slice(6,8))-sum(past.slice(6,8))}}`,'done (learn)');}}"
-            f"if (past[4] !== current[4] || past[5] !== current[5]) {{console.log(`+${{sum(current.slice(4,6))-sum(past.slice(4,6))}}`,'done (learn | hold)');}}"
-            f"if (past[8] !== current[8] || past[9] !== current[9] || past[10] !== current[10] || past[11] !== current[11]) {{console.log(`+${{sum(current.slice(8,12))-sum(past.slice(8,12))}}`,'done (review)');}}"
-            f"if (past[14] !== current[14] || past[15] !== current[15]) {{console.log(`+${{sum(current.slice(14,16))-sum(past.slice(14,16))}}`,'done (relearn)');}}"
-            f"if (past[12] !== current[12] || past[13] !== current[13]) {{console.log(`+${{sum(current.slice(12,14))-sum(past.slice(12,14))}}`,'done (relearn | hold)');}}"
-            f"if (past[16] !== current[16]) {{console.log(`${{current[16]>past[16]?'+':''}}${{current[16]-past[16]}}`,'new');}}"
-            f"if (past[17] !== current[17] || past[18] !== current[18] || past[19] !== current[19]) {{console.log(`${{current[17]>past[17]?'+':''}}${{current[17]-past[17]}}`,`(${{current[18]>past[18]?'+':''}}${{current[18]-past[18]}}..${{current[19]>past[19]?'+':''}}${{current[19]-past[19]}})`,'learn');}}"
-            f"if (past[20] !== current[20]) {{console.log(`${{current[20]>past[20]?'+':''}}${{current[20]-past[20]}}`,'review');}}"
-            f"if (past[21] !== current[21] || past[22] !== current[22] || past[23] !== current[23]) {{console.log(`${{current[21]>past[21]?'+':''}}${{current[21]-past[21]}}`,`(${{current[22]>past[22]?'+':''}}${{current[22]-past[22]}}..${{current[23]>past[23]?'+':''}}${{current[23]-past[23]}})`,'relearn');}}"
+            # # diff
+            # f"current = {card_counts};"
+            # f"sum = arr=>arr.reduce((a,b)=>a+b,0);"
+            # f"past = JSON.parse(sessionStorage.getItem('cardCounts'));"
+            # f"sessionStorage.setItem('cardCounts', JSON.stringify(current));"
+            # f"if (past[0] !== current[0] || past[1] !== current[1] || past[2] !== current[2] || past[3] !== current[3]) {{console.log(`+${{sum(current.slice(0,4))-sum(past.slice(0,4))}}`,'done (new)');}}"
+            # f"if (past[6] !== current[6] || past[7] !== current[7]) {{console.log(`+${{sum(current.slice(6,8))-sum(past.slice(6,8))}}`,'done (learn)');}}"
+            # f"if (past[4] !== current[4] || past[5] !== current[5]) {{console.log(`+${{sum(current.slice(4,6))-sum(past.slice(4,6))}}`,'done (learn | hold)');}}"
+            # f"if (past[8] !== current[8] || past[9] !== current[9] || past[10] !== current[10] || past[11] !== current[11]) {{console.log(`+${{sum(current.slice(8,12))-sum(past.slice(8,12))}}`,'done (review)');}}"
+            # f"if (past[14] !== current[14] || past[15] !== current[15]) {{console.log(`+${{sum(current.slice(14,16))-sum(past.slice(14,16))}}`,'done (relearn)');}}"
+            # f"if (past[12] !== current[12] || past[13] !== current[13]) {{console.log(`+${{sum(current.slice(12,14))-sum(past.slice(12,14))}}`,'done (relearn | hold)');}}"
+            # f"if (past[16] !== current[16]) {{console.log(`${{current[16]>past[16]?'+':''}}${{current[16]-past[16]}}`,'new');}}"
+            # f"if (past[17] !== current[17] || past[18] !== current[18] || past[19] !== current[19]) {{console.log(`${{current[17]>past[17]?'+':''}}${{current[17]-past[17]}}`,`(${{current[18]>past[18]?'+':''}}${{current[18]-past[18]}}..${{current[19]>past[19]?'+':''}}${{current[19]-past[19]}})`,'learn');}}"
+            # f"if (past[20] !== current[20]) {{console.log(`${{current[20]>past[20]?'+':''}}${{current[20]-past[20]}}`,'review');}}"
+            # f"if (past[21] !== current[21] || past[22] !== current[22] || past[23] !== current[23]) {{console.log(`${{current[21]>past[21]?'+':''}}${{current[21]-past[21]}}`,`(${{current[22]>past[22]?'+':''}}${{current[22]-past[22]}}..${{current[23]>past[23]?'+':''}}${{current[23]-past[23]}})`,'relearn');}}"
 
             # result
             f"console.log('{log_msg}');"
@@ -321,10 +309,8 @@ def upd_progress(*args, **kwargs):
                         if(segmL) {{ 
                             segmL.style.setProperty('--count', {count});
                             if ({count} > 0) {{
-                                segmL.style.minWidth = '1px';
                                 segmL.classList.remove('empty');
                             }} else {{
-                                segmL.style.minWidth = '';
                                 segmL.classList.add('empty');
                             }}
                             setTimeout(()=>segmL.classList.add('animated'),100);

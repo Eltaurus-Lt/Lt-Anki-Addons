@@ -55,10 +55,6 @@
     background: var(--state-color);
 }
 
-.prog-segment.empty {
-    height: 0;
-}
-
 .prog-segment.new {
     --state-color: var(--prog-new);
 }

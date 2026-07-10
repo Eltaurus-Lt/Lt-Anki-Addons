@@ -32,7 +32,8 @@ from aqt.utils import tooltip
 # todo:
 #   iterate over decks for home screen -> enhance main window
 #   remove done_total + tooltips
-#   congratulations
+#   fix double injection (css+js) on congratulations
+#   embed to body instead of center
 #
 # empty learning steps?
 # learning siblings
@@ -354,9 +355,19 @@ def reviewer_inject(web_content, context):
     if not isinstance(context, Reviewer): return
     web_content.body = progress_bar_template() + web_content.body
 
+def congrats_inject(webview):
+    if "congrats" not in webview.page().url().toString(): return
+    webview.eval(f"""
+        if (!document.getElementById('lt-progress-bar')) {{
+            document.body.insertAdjacentHTML("afterbegin", `{progress_bar_template()}`);
+        }}
+    """)
+    upd_progress()
+
 gui_hooks.deck_browser_will_render_content.append(deck_main_inject)
 gui_hooks.overview_will_render_content.append(deck_view_inject)
 gui_hooks.webview_will_set_content.append(reviewer_inject)
+gui_hooks.webview_did_inject_style_into_page.append(congrats_inject)
 
 gui_hooks.reviewer_did_show_question.append(upd_progress)
 gui_hooks.deck_browser_did_render.append(upd_progress)

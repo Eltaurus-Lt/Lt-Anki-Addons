@@ -34,9 +34,11 @@ mw.addonManager.setWebExports(__name__, r"css/.*\.css|js/.*\.js|user_files/(.*\.
 addons_folder = mw.addonManager.addonsFolder()
 addon_name = mw.addonManager.addonFromModule(__name__)
 
+def injectable_type(inj_filename):
+    return os.path.splitext(inj_filename)[1].lstrip(".").lower()
 
 def general_injector(inj_filename, web_content):
-    inj_type = os.path.splitext(inj_filename)[1].lstrip(".").lower()
+    inj_type = injectable_type(inj_filename)
 
     if inj_type == "css":
         target = web_content.css
@@ -75,6 +77,42 @@ def window_injector(web_content, context: None):
         inject("reviewer_styles.css")
         inject("reviewer_scripts.js")
 
+def congrats_injector(webview):
+    if "congrats" not in webview.page().url().toString(): return
+
+    def inject(inj_filename):
+        inj_type = injectable_type(inj_filename)
+
+        def inject_url(inj_url):
+            if inj_type == "css":
+                webview.eval(f"""
+                    (()=>{{
+                        const cssL = document.createElement('link');
+                        cssL.rel = 'stylesheet';
+                        cssL.type = 'text/css';
+                        cssL.href = `{inj_url}`;
+                        document.head.appendChild(cssL);
+                    }})();
+                """)
+            elif inj_type == "js":
+                webview.eval(f"""
+                    (()=>{{
+                        const jsL = document.createElement('script');
+                        jsL.setAttribute(`src`, `{inj_url}`);
+                        document.head.appendChild(jsL);
+                    }})();                    
+                """)
+
+        if os.path.exists(os.path.join(addons_folder, addon_name, inj_type, inj_filename)):
+            inject_url(f"/_addons/{addon_name}/{inj_type}/{inj_filename}")
+        if os.path.exists(os.path.join(addons_folder, addon_name, "user_files", inj_filename)):
+            inject_url(f"/_addons/{addon_name}/user_files/{inj_filename}")
+
+    inject("common_styles.css")
+    inject("common_scripts.js")
+    inject("deck_styles.css")
+    inject("deck_scripts.js") 
 
 gui_hooks.webview_will_set_content.append(window_injector)
+gui_hooks.webview_did_inject_style_into_page.append(congrats_injector) # occasionally triggered twice when displaying congrats
 
